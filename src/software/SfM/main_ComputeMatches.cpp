@@ -165,7 +165,8 @@ int main(int argc, char **argv)
     break;
     case 'e': case 'E':
       eGeometricModelToCompute = ESSENTIAL_MATRIX;
-      sGeometricMatchesFilename = "matches.e.bin";
+      //sGeometricMatchesFilename = "matches.e.bin";
+      sGeometricMatchesFilename = "matches.e.txt";
     break;
     case 'h': case 'H':
       eGeometricModelToCompute = HOMOGRAPHY_MATRIX;
@@ -215,7 +216,9 @@ int main(int argc, char **argv)
 
   // Load the corresponding view regions
   std::shared_ptr<Regions_Provider> regions_provider = std::make_shared<Regions_Provider>();
-  if (!regions_provider->load(sfm_data, sMatchesDirectory, regions_type)) {
+  //if (!regions_provider->load(sfm_data, sMatchesDirectory, regions_type)) {
+  std::string sFeaturesDirectory = sSfM_Data_Filename.substr(0, sSfM_Data_Filename.find_last_of("\\/"));
+  if (!regions_provider->load(sfm_data, sFeaturesDirectory, regions_type)) {
     std::cerr << std::endl << "Invalid regions." << std::endl;
     return EXIT_FAILURE;
   }

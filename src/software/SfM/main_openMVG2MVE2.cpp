@@ -94,13 +94,28 @@ bool exportToMVE2Format(
 
     // Export (calibrated) views as undistorted images
     C_Progress_display my_progress_bar(sfm_data.GetViews().size());
-    std::pair<int,int> w_h_image_size;
-    Image<RGBColor> image, image_ud, thumbnail;
-    std::string sOutViewIteratorDirectory;
-    for(Views::const_iterator iter = sfm_data.GetViews().begin();
-      iter != sfm_data.GetViews().end(); ++iter, ++my_progress_bar)
+
+    //    #ifdef OPENMVG_USE_OPENMP
+    //#pragma omp parallel for schedule(dynamic)
+    //#endif
+    const int available_thread_number = omp_get_max_threads();
+    std::cout << "AVAILABLE THREAD NUMBER : " << available_thread_number <<" \n";
+    const size_t views_number = std::distance(sfm_data.GetViews().begin(), sfm_data.GetViews().end());
+    std::cout << "VIEWS NUMBER : "<< views_number << " \n";
+    
+    Views::const_iterator iter = sfm_data.GetViews().begin();
+    //for(Views::const_iterator iter = sfm_data.GetViews().begin();
+    //  iter != sfm_data.GetViews().end(); ++iter)
+    #ifdef OPENMVG_USE_OPENMP
+    #pragma omp parallel for schedule(dynamic)
+    #endif
+    for (int i = 0; i < views_number; i++)
     {
-      const View * view = iter->second.get();
+      std::pair<int,int> w_h_image_size;
+      Image<RGBColor> image, image_ud, thumbnail;
+      std::string sOutViewIteratorDirectory;
+
+      const View * view = std::next(iter,  i)->second.get();
 
       // Create current view subdirectory 'view_xxxx.mve'
       std::ostringstream padding;
@@ -155,41 +170,46 @@ bool exportToMVE2Format(
         const float flen = pinhole_cam->focal() / static_cast<double>(std::max(cam->w(), cam->h()));
         const float ppX = std::abs(pinhole_cam->principal_point()(0)/cam->w());
         const float ppY = std::abs(pinhole_cam->principal_point()(1)/cam->h());
+        
+        //#ifdef OPENMVG_USE_OPENMP
+        //#pragma omp critical
+        //#endif
+			{
+			// For each camera, write to bundle:  focal length, radial distortion[0-1], rotation matrix[0-8], translation vector[0-2]
+			std::ostringstream fileOut;
+			fileOut
+			  << "# MVE view meta data is stored in INI-file syntax." << fileOut.widen('\n')
+			  << "# This file is generated, formatting will get lost." << fileOut.widen('\n')
+			  << fileOut.widen('\n')
+			  << "[camera]" << fileOut.widen('\n')
+			  << "focal_length = " << flen << fileOut.widen('\n')
+			  << "pixel_aspect = " << pixelAspect << fileOut.widen('\n')
+			  << "principal_point = " << ppX << " " << ppY << fileOut.widen('\n')
+			  << "rotation = " << rotation(0, 0) << " " << rotation(0, 1) << " " << rotation(0, 2) << " "
+			  << rotation(1, 0) << " " << rotation(1, 1) << " " << rotation(1, 2) << " "
+			  << rotation(2, 0) << " " << rotation(2, 1) << " " << rotation(2, 2) << fileOut.widen('\n')
+			  << "translation = " << translation[0] << " " << translation[1] << " "
+			  << translation[2] << " " << fileOut.widen('\n')
+			  << fileOut.widen('\n')
+			  << "[view]" << fileOut.widen('\n')
+			  << "id = " << view->id_view << fileOut.widen('\n')
+			  << "name = " << stlplus::filename_part(srcImage.c_str()) << fileOut.widen('\n');
 
-        // For each camera, write to bundle:  focal length, radial distortion[0-1], rotation matrix[0-8], translation vector[0-2]
-        std::ostringstream fileOut;
-        fileOut
-          << "# MVE view meta data is stored in INI-file syntax." << fileOut.widen('\n')
-          << "# This file is generated, formatting will get lost." << fileOut.widen('\n')
-          << fileOut.widen('\n')
-          << "[camera]" << fileOut.widen('\n')
-          << "focal_length = " << flen << fileOut.widen('\n')
-          << "pixel_aspect = " << pixelAspect << fileOut.widen('\n')
-          << "principal_point = " << ppX << " " << ppY << fileOut.widen('\n')
-          << "rotation = " << rotation(0, 0) << " " << rotation(0, 1) << " " << rotation(0, 2) << " "
-          << rotation(1, 0) << " " << rotation(1, 1) << " " << rotation(1, 2) << " "
-          << rotation(2, 0) << " " << rotation(2, 1) << " " << rotation(2, 2) << fileOut.widen('\n')
-          << "translation = " << translation[0] << " " << translation[1] << " "
-          << translation[2] << " " << fileOut.widen('\n')
-          << fileOut.widen('\n')
-          << "[view]" << fileOut.widen('\n')
-          << "id = " << view->id_view << fileOut.widen('\n')
-          << "name = " << stlplus::filename_part(srcImage.c_str()) << fileOut.widen('\n');
+			// To do:  trim any extra separator(s) from openMVG name we receive, e.g.:
+			// '/home/insight/openMVG_KevinCain/openMVG_Build/software/SfM/ImageDataset_SceauxCastle/images//100_7100.JPG'
+			std::ofstream file(
+			  stlplus::create_filespec(stlplus::folder_append_separator(sOutViewIteratorDirectory),
+			  "meta","ini").c_str());
+			file << fileOut.str();
+			file.close();
 
-        // To do:  trim any extra separator(s) from openMVG name we receive, e.g.:
-        // '/home/insight/openMVG_KevinCain/openMVG_Build/software/SfM/ImageDataset_SceauxCastle/images//100_7100.JPG'
-        std::ofstream file(
-          stlplus::create_filespec(stlplus::folder_append_separator(sOutViewIteratorDirectory),
-          "meta","ini").c_str());
-        file << fileOut.str();
-        file.close();
-
-        out
-          << flen << " " << "0" << " " << "0" << "\n"  // Write '0' distortion values for pre-corrected images
-          << rotation(0, 0) << " " << rotation(0, 1) << " " << rotation(0, 2) << "\n"
-          << rotation(1, 0) << " " << rotation(1, 1) << " " << rotation(1, 2) << "\n"
-          << rotation(2, 0) << " " << rotation(2, 1) << " " << rotation(2, 2) << "\n"
-          << translation[0] << " " << translation[1] << " " << translation[2] << "\n";
+			out
+			  << flen << " " << "0" << " " << "0" << "\n"  // Write '0' distortion values for pre-corrected images
+			  << rotation(0, 0) << " " << rotation(0, 1) << " " << rotation(0, 2) << "\n"
+			  << rotation(1, 0) << " " << rotation(1, 1) << " " << rotation(1, 2) << "\n"
+			  << rotation(2, 0) << " " << rotation(2, 1) << " " << rotation(2, 2) << "\n"
+			  << translation[0] << " " << translation[1] << " " << translation[2] << "\n";
+		  }
       }
       else
       {
@@ -205,6 +225,8 @@ bool exportToMVE2Format(
       const std::string dstThumbnailImage =
         stlplus::create_filespec(stlplus::folder_append_separator(sOutViewIteratorDirectory), "thumbnail","png");
       WriteImage(dstThumbnailImage.c_str(), thumbnail);
+      
+      ++my_progress_bar;
     }
 
     // For each feature, write to bundle:  position XYZ[0-3], color RGB[0-2], all ref.view_id & ref.feature_id

@@ -221,13 +221,23 @@ int main(int argc, char **argv)
       exifReader->doesHaveExifInfo()
       && !exifReader->getModel().empty();
 
+    if (!bHaveValidExifMetadata && focal_pixels == -1)
+    {
+        //6.16 is the most popular sensor size, so we just make a guess
+        //we guess that the focal is 5mm
+        focal = std::max ( width, height ) * 5.0 / 6.16;
+        error_report_stream
+          << stlplus::basename_part(sImageFilename) << ": Focal length is missing. Guessing" << "\n";
+    }
     // Consider the case where the focal is provided manually
-    if ( !bHaveValidExifMetadata || focal_pixels != -1)
+    else if ( !bHaveValidExifMetadata || focal_pixels != -1)
     {
       if (sKmatrix.size() > 0) // Known user calibration K matrix
       {
         if (!checkIntrinsicStringValidity(sKmatrix, focal, ppx, ppy))
-          focal = -1.0;
+          {
+            focal = -1.0;
+          }
       }
       else // User provided focal length value
         if (focal_pixels != -1 )
